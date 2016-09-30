@@ -84,6 +84,8 @@ trait ScalarOpConstants
    val ALU_SLTU   = UInt ( 9, 4)
    val ALU_COPY_1 = UInt (10, 4)
    val ALU_COPY_2 = UInt (11, 4)
+   val ALU_DIV    = UInt (12, 4)
+   val ALU_REM    = UInt (13, 4)
    val ALU_X      = UInt ( 0, 4)
 
    // Writeback Select Signal
