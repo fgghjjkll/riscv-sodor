@@ -298,6 +298,8 @@ class DatPath(implicit conf: SodorConfiguration) extends Module
    exe_alu_out := MuxCase(exe_reg_inst.toUInt, Array(
                   (exe_reg_ctrl_alu_fun === ALU_ADD)  -> exe_adder_out,
                   (exe_reg_ctrl_alu_fun === ALU_SUB)  -> (exe_alu_op1 - exe_alu_op2).toUInt,
+                  (exe_reg_ctrl_alu_fun === ALU_DIV)  -> (exe_alu_op1 / exe_alu_op2).toUInt,
+                  (exe_reg_ctrl_alu_fun === ALU_REM)  -> (exe_alu_op1 % exe_alu_op2).toUInt,
                   (exe_reg_ctrl_alu_fun === ALU_AND)  -> (exe_alu_op1 & exe_alu_op2).toUInt,
                   (exe_reg_ctrl_alu_fun === ALU_OR)   -> (exe_alu_op1 | exe_alu_op2).toUInt,
                   (exe_reg_ctrl_alu_fun === ALU_XOR)  -> (exe_alu_op1 ^ exe_alu_op2).toUInt,
