@@ -19,43 +19,95 @@ package Sodor
   class DivDPath(val n: Int) extends Module {
     //io here
     val io = new Bundle{
-      val x = UInt(INPUT, n); // numerator
-      val y = UInt(INPUT, n); // denominator
+      val x = UInt(INPUT, n); // numerator/dividend
+      val y = UInt(INPUT, n); // denominator/divisor
       val z = UInt(OUTPUT, n); //result
     }
     //initializing some stuff
     val numerator = Reg(init = UInt(0, width = n));
-    val denominator = Reg(init = UInt(0, width = n));
-    val result = UInt(0);
-    var count = n;
+    val denominator = Reg(init = UInt(0, width = n)); // eventually becomes the result
+    val remainder = Reg(init = UInt(0, width = n)); // Q (or quotient)
+    // val remainder = Reg(init = UInt(0, width = n)); // A (or remainder)
+
+    numerator := io.x;
+    denominator := io.y;
+    // val count = Reg(init = UInt(n, width = n));;
     // non repeating algorithm as outlined here http://stackoverflow.com/questions/12133810/non-restoring-division-algorithm
 
-    while(count > 0){
-      when(result < UInt(0)){
-        result := result >> UInt(1);
-        denominator := denominator >> UInt(1);
-        result := result + numerator;
+    // when(count > UInt(0)){
+    for( i <- 0 until n){
+      when(remainder < UInt(0)){
+        remainder := remainder << UInt(1);
+        denominator := denominator << UInt(1);
+        remainder := remainder + numerator;
       } .otherwise {
-        result := result >> UInt(1);
-        denominator := denominator >> UInt(1);
-        result := result - numerator;
+        remainder := remainder << UInt(1);
+        denominator := denominator << UInt(1);
+        remainder := remainder - numerator;
       }
 
-      when(result < UInt(0)){
-        denominator(n-2,n-1) := UInt(0);
+      when(remainder < UInt(0)){
+        denominator(n-1) := UInt(0);
       } .otherwise {
-        denominator(n-2,n-1) := UInt(1);
+        denominator(n-1) := UInt(1);
       }
 
-      count = count - 1;
+      // count := count - UInt(1);
     }
 
-    when(result < UInt(0)){
-      result := result + numerator;
+    when(remainder < UInt(0)){
+      remainder := remainder + numerator;
     }
 
-    io.z := result;
+    io.z := denominator;
   }
+
+  // class nonRestDiv(val n: Int) extends Module {
+  //
+  //   val io = new Bundle{
+  //     val x = UInt(INPUT, n);  // dividend
+  //     val y = UInt(INPUT, n);  // divisor
+  //     val z = UInt(OUTPUT, n); // result
+  //   }
+  //
+  //   val dividend = Reg(init = UInt(0, width = n));
+  //   dividend := io.x;
+  //   val divisor = Reg(init = UInt(0, width = n));
+  //   divisor := io.y;
+  //   val remainder = Reg(init = UInt(0, width = n));
+  //   val quotient = Reg(init = UInt(0, width = n));
+  //   // val count = Reg(init = UInt(0, width = n));;
+  //
+  //   quotient |= dividend;
+  //
+  //   for(count -> 0 until n){
+  //     .when(remainder < UInt(0)){
+  //       remainder := remainder << UInt(1);
+  //       remainder := remainder + dividend(n-count);
+  //       quotient := quotient << UInt(1);
+  //       remainder := remainder + divisor;
+  //     } .otherwise {
+  //       remainder := remainder << UInt(1);
+  //       remainder := remainder + dividend(n-count);
+  //       quotient := quotient >> UInt(1);
+  //       remainder := remainder - divisor;
+  //     }
+  //
+  //     .when(remainder < UInt(0)){
+  //       quotient(n-1) := UInt(0);
+  //     } .otherwise {
+  //       quotient(n-1) := UInt(1);
+  //     }
+  //
+  //     // count := count - UInt(1);
+  //   }
+  //
+  //   when(remainder < UInt(0)){
+  //     remainder := remainder + divisor;
+  //   }
+  //
+  //   io.z := quotient;
+  // }
 
   class DatToCtlIo(implicit conf: SodorConfiguration) extends Bundle()
   {
@@ -136,6 +188,7 @@ package Sodor
     val wb_reg_wbaddr         = Reg(UInt())
     val wb_reg_wbdata         = Reg(Bits(width = conf.xprlen))
     val wb_reg_ctrl_rf_wen    = Reg(init=Bool(false))
+    val alu_div_stall         = Reg(init=Bool(false))
 
 
     //**********************************
@@ -334,12 +387,23 @@ package Sodor
             val alu_shamt     = exe_alu_op2(4,0).toUInt
             val exe_adder_out = (exe_alu_op1 + exe_alu_op2)(conf.xprlen-1,0)
             val divisor = Module(new DivDPath(32))
+            val counter = Reg(init = UInt(0, width = 5));
 
             divisor.io.x := exe_alu_op1
             divisor.io.y := exe_alu_op2
 
+            when(exe_reg_ctrl_alu_fun === ALU_DIV && alu_div_stall === Bool(false)){
+              counter := UInt(32)
+              alu_div_stall := Bool(true)
+            }
             //   exe_alu_out := MuxCase(UInt(0), Array(
             //only for debug purposes right now until debug() works
+            when(counter === UInt(0) && alu_div_stall === Bool(true)){
+              alu_div_stall := Bool(false)
+              exe_alu_out := divisor.io.z
+            } .otherwise{
+              counter := counter - UInt(1)
+            }
             exe_alu_out := MuxCase(exe_reg_inst.toUInt, Array(
               (exe_reg_ctrl_alu_fun === ALU_ADD)  -> exe_adder_out,
               (exe_reg_ctrl_alu_fun === ALU_SUB)  -> (exe_alu_op1 - exe_alu_op2).toUInt,
@@ -352,7 +416,7 @@ package Sodor
               (exe_reg_ctrl_alu_fun === ALU_SRA)  -> (exe_alu_op1.toSInt >> alu_shamt).toUInt,
               (exe_reg_ctrl_alu_fun === ALU_SRL)  -> (exe_alu_op1 >> alu_shamt).toUInt,
               // (exe_reg_ctrl_alu_fun === ALU_DIV)  -> (exe_alu_op1 / exe_alu_op2).toUInt,
-              (exe_reg_ctrl_alu_fun === ALU_DIV)  -> divisor.io.y,
+              // (exe_reg_ctrl_alu_fun === ALU_DIV)  -> divisor.io.z,
               (exe_reg_ctrl_alu_fun === ALU_REM)  -> (exe_alu_op1 % exe_alu_op2).toUInt,
               (exe_reg_ctrl_alu_fun === ALU_COPY_1)-> exe_alu_op1,
               (exe_reg_ctrl_alu_fun === ALU_COPY_2)-> exe_alu_op2
